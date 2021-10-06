@@ -4,6 +4,7 @@ import SocketIO from 'socket.io'
 import { port } from './config.json'
 import Events from './events.js'
 import Lobby from './Lobby'
+import rooms from './rooms.js'
 
 const app = new Koa()
 const http = httpModule.createServer(app.callback())
@@ -23,8 +24,9 @@ io.on('connection', socket => {
   Object.keys(events).forEach(name => socket.on(name, events[name]))
 
   socket.on('disconnect', () => {
-    console.log(`user #${socket.id} disconnected`)
-    Object.keys(socket.rooms).map(id => rooms.has(id) && rooms.get(id).leave(socket))
+    console.log(`user #${socket.id} disconnected`);
+    console.log(rooms.keys());
+    rooms.forEach((v,id) => v.leave(socket))
   })
 })
 

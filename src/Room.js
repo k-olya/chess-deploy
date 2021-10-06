@@ -34,9 +34,7 @@ class Room {
     broadcastState() {
         this.io.emit('state', this.state)
     }
-    keyDown(playerId, key) {
-    }
-    keyUp(playerId, key) {
+    move(playerId, move) {
     }
     disconnect(playerId) {
         this.players = this.players.filter(p => p !== playerId)

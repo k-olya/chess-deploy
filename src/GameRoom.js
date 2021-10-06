@@ -2,28 +2,15 @@ import { nanoid } from 'nanoid'
 import * as _ from 'lodash'
 import Room from './Room'
 import rooms from './rooms.js'
+import { Chess } from "chess.js"
 
 const MAX_PLAYERS = 2
 
 const defaultState = {
-    player1: {
-        up: false,
-        down: false,
-        y: 64
-    },
-    player2: {
-        up: false,
-        down: false,
-        y: 64
-    },
-    ball: {
-        x: 128,
-        y: 64,
-        vx: 2,
-        vy: 2
-    },
-    lastGoal: 0,
-    state: 'INITIAL'
+    state: 'INITIAL',
+    players: {white:"",black:""},
+    fen: "",
+    turn:""
 }
 
 const hitTestX = state => {
@@ -42,26 +29,13 @@ class GameRoom extends Room {
         super(io, id)
         this.spectators = []
         this.state = _.cloneDeep(defaultState)
+        this.chess = new Chess()
+        this.state.fen = this.chess.fen()
         this.lastTick = new Date().getTime()
         this.state.lastGoal = this.lastTick
     }
     tick() {
       if (this.state.state === 'PLAYING') {
-        this.state.ball.x+=this.state.ball.vx
-        this.state.ball.y+=this.state.ball.vy
-        if (this.state.ball.x >= 256 || this.state.ball.x <= 0) {
-            this.state.ball.vx*=-1
-            this.state.lastGoal = new Date().getTime()
-            this.io.binary(true).to(this.id).emit('sp', {lastGoal: this.state.lastGoal})
-        } else if (hitTestX(this.state)) this.state.ball.vx*=-1
-        if (this.state.ball.y >= 128 || this.state.ball.y <= 0 || hitTestY(this.state)) this.state.ball.vy*=-1
-        this.io.binary(true).to(this.id).emit('sp', {ball:{x:this.state.ball.x, y:this.state.ball.y}})
-
-        if (this.state.player1.up && this.state.player1.y > 12.5) this.state.player1.y -= 2
-        if (this.state.player1.down && this.state.player1.y < 115.5) this.state.player1.y += 2
-        if (this.state.player2.up && this.state.player2.y > 12.5) this.state.player2.y -= 2
-        if (this.state.player2.down && this.state.player2.y < 115.5) this.state.player2.y += 2
-        this.io.binary(true).to(this.id).emit('sp', {player1: this.state.player1, player2: this.state.player2})
       }
       if (this.state.state === 'INITIAL') {
           if (this.players.length === 2) {
@@ -78,13 +52,21 @@ class GameRoom extends Room {
             this.destructor()
         }
     }
-    keyDown(playerId, key) {
+    move(playerId, move) {
         if (!this.players.includes(playerId)) return this
-        this.state[`player${this.players[0] === playerId ? 1 : 2}`][key === 'up' ? 'up' : 'down'] = true
-    }
-    keyUp(playerId, key) {
-        if (!this.players.includes(playerId)) return this
-        this.state[`player${this.players[0] === playerId ? 1 : 2}`][key === 'up' ? 'up' : 'down'] = false
+        if (!move || !move.to || !move.from) return this
+        let m
+        try {
+          m = this.chess.move(move)
+        } catch (e) {
+          console.log(e)
+          m = null
+        }
+        if(!m) return this
+        this.state.fen = this.chess.fen()
+        this.state.turn = this.chess.turn()
+        this.io.emit('sp', { fen: this.state.fen, turn: this.state.turn })
+        this.io.emit('move', move)
     }
     join(socket) {
         socket.join(this.id)
@@ -94,13 +76,25 @@ class GameRoom extends Room {
         } else {
             this.players = this.players.concat([socket.id])
         }
+        if (this.state.players.white && !this.state.players.black) this.state.players.black = socket.id
+        if (!this.state.players.white) this.state.players.white = socket.id
         this.sendState(socket)
+        this.io.emit('sp', {players: this.state.players})
         this.io.to(socket.id).emit('message', `welcome ${socket.id} to GAME ROOM ${this.id}`)
         return this
     }
+    leave(socket) {
+      console.log(2)
+        this.disconnect(socket.id)
+        socket.leave(this.id)
+    }
     disconnect(playerId) {
-        super.disconnect(playerId)
+        if (this.state.players.white == playerId) this.state.players.white = ""
+        if (this.state.players.black == playerId) this.state.players.black = ""
+        this.io.emit('sp', {players: this.state.players})
         this.spectators = this.spectators.filter(p => p !== playerId)
+        console.log(1)
+        super.disconnect(playerId)
     }
 }
 
